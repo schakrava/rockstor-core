@@ -258,6 +258,7 @@ class PoolListView(PoolMixin, rfc.GenericView):
             dnames = [d.name for d in disks]
             p = Pool(name=pname, raid=raid_level, compression=compression,
                      mnt_options=mnt_options)
+            p.save()
             p.disk_set.add(*disks)
             add_pool(p, dnames)
             p.size = pool_usage(mount_root(p))[0]
