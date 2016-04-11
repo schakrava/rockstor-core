@@ -128,15 +128,15 @@ def mount_root(pool):
     if (is_share_mounted(pool.name)):
         return root_pool_mnt
     create_tmp_dir(root_pool_mnt)
-    mnt_device = '/dev/disk/by-label/%s' % pool.name
-    mnt_cmd = [MOUNT, mnt_device, root_pool_mnt, ]
+    pool_label = ('/dev/disk/by-label/%s' % pool.name)
+    mnt_cmd = [MOUNT, pool_label, root_pool_mnt, ]
     mnt_options = ''
     if (pool.mnt_options is not None):
         mnt_options = pool.mnt_options
     if (pool.compression is not None):
         if (re.search('compress', mnt_options) is None):
             mnt_options = ('%s,compress=%s' % (mnt_options, pool.compression))
-    if (os.path.exists(mnt_device)):
+    if (os.path.exists(pool_label)):
         if (len(mnt_options) > 0):
             mnt_cmd.extend(['-o', mnt_options])
         run_command(mnt_cmd)
@@ -232,15 +232,15 @@ def mount_share(share, mnt_pt):
     if (is_mounted(mnt_pt)):
         return
     mount_root(share.pool)
-    pool_device = ('/dev/%s' % share.pool.disk_set.first().name)
+    pool_label = ('/dev/disk/by-label/%s' % share.pool.name)
     subvol_str = 'subvol=%s' % share.subvol_name
     create_tmp_dir(mnt_pt)
-    mnt_cmd = [MOUNT, '-t', 'btrfs', '-o', subvol_str, pool_device, mnt_pt]
+    mnt_cmd = [MOUNT, '-t', 'btrfs', '-o', subvol_str, pool_label, mnt_pt]
     return run_command(mnt_cmd)
 
 
 def mount_snap(share, snap_name, snap_mnt=None):
-    pool_device = ('/dev/%s' % share.pool.disk_set.first().name)
+    pool_label = ('/dev/disk/by-label/%s' % share.pool.name)
     share_path = ('%s%s' % (DEFAULT_MNT_DIR, share.name))
     rel_snap_path = ('.snapshots/%s/%s' % (share.name, snap_name))
     snap_path = ('%s%s/%s' %
@@ -253,7 +253,7 @@ def mount_snap(share, snap_name, snap_mnt=None):
     if (is_subvol(snap_path)):
         create_tmp_dir(snap_mnt)
         return run_command([MOUNT, '-o', 'subvol=%s' % rel_snap_path,
-                            pool_device, snap_mnt])
+                            pool_label, snap_mnt])
 
 
 def subvol_list_helper(mnt_pt):
@@ -511,7 +511,7 @@ def rollback_snap(snap_name, sname, subvol_name, pool):
     shutil.move(snap_fp, '%s/%s/%s' % (DEFAULT_MNT_DIR, pool.name, sname))
     create_tmp_dir(mnt_pt)
     subvol_str = 'subvol=%s' % sname
-    dpath = '/dev/%s' % pool.disk_set.first().name
+    pool_label = ('/dev/disk/by-label/%s' % pool.name)
     mnt_cmd = [MOUNT, '-t', 'btrfs', '-o', subvol_str, dpath, mnt_pt]
     run_command(mnt_cmd)
 
