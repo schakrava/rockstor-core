@@ -43,7 +43,7 @@
     <div class="col-md-12">
     <div class="messages"></div>
     <!-- Content -->
-    <table id="replica-receives-table" class="table table-condensed table-bordered table-hover table-striped share-table tablesorter" summary="List of replica receives">
+    <table id="replica-receives-table" class="table table-bordered table-striped share-table data-table" width="100%" summary="List of replica receives">
     <thead>
     <tr>
     <th scope="col" abbr="Received Task ID">Received Task ID </th>
@@ -55,10 +55,20 @@
     </tr>
     </thead>
     <tbody>
-    {{replication_receive_table}}
+    {{#each replicaColl}}
+        <tr>
+            <td>{{this.id}}<a href="#" data-rshare-name="{{this.share}}" data-rshare-id="{{this.id}}" data-action="delete">
+                <i class="glyphicon glyphicon-trash" rel="tooltip" title="Delete"></i></a>
+            </td>
+            <td>{{this.appliance}}</td>
+            <td>{{this.src_share}}</td>
+            <td><a href="#pools/{{this.pool}}">{{this.pool}}</a></td>
+            <td>{{this.share}}</td>
+            <td>{{lastReceived this.id}}</td>
+        </tr>
+    {{/each}}
     </tbody>
     </table>
-    <div>{{pagination}}</div>
     </div> <!-- col-md-12 -->
     </div> <!-- row -->
 {{else}} 

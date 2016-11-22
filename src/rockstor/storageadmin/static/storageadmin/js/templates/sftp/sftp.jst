@@ -15,7 +15,7 @@
     </div>
     <div class="messages"></div>
     {{#if collectionNotEmpty}}
-      <table id="sftp-shares-table" class="table table-condensed table-bordered table-hover table-striped share-table tablesorter" summary="List of sftp shares">
+      <table id="sftp-shares-table" class="table table-bordered table-striped share-table data-table" width="100%" summary="List of sftp shares">
         <thead>
           <tr>
             <th scope="col" abbr="Host String">Share name</th>
@@ -24,15 +24,21 @@
           </tr>
         </thead>
         <tbody>
-          {{display_sftp_shares}}
+          {{#each sftpShare}}
+            <tr>
+                <td>{{this.share}}</td>
+                <td>{{displaySftpPermission this.editable}}</td>
+                <td><a href="#" class="delete-sftp-share" data-id="{{this.id}}">
+                <i class="glyphicon glyphicon-trash"></i></a></td>
+            </tr>
+          {{/each}}
         </tbody>
       </table>
-      {{pagination}}
       {{else}}
       <table id="sftp-shares-table" class="table table-condensed table-bordered table-hover table-striped share-table tablesorter" summary="List of sftp shares">
         <tbody>
           <tr>
-            <td colspan="3">
+            <td colspan="5">
               <h4>No sftp shares have been created</h4>
             </td>
           </tr>
@@ -43,8 +49,11 @@
   </div>
 </div>
 
-{{#if sharesNotEmpty}}
-  <a href="#add-sftp-share" id="add-sftp-share" class="btn btn-primary"><i class="glyphicon glyphicon-edit "></i> Add SFTP Share</a>
-  {{else}}
-  <a  id="add-sftp-share" class="btn btn-primary disabled" title="No shares available to export via SFTP"><i class="glyphicon glyphicon-edit "></i> Add SFTP Share</a>
-{{/if}}
+<a id="add-sftp-share" class="btn btn-primary"
+    {{#if sharesNotEmpty}}
+        href="#add-sftp-share">
+    {{else}}
+        disabled="disabled" title="No shares available to export via SFTP">
+    {{/if}}
+<i class="glyphicon glyphicon-edit "></i> Add SFTP Share</a>
+

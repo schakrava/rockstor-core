@@ -52,7 +52,6 @@ AddScheduledTaskView = RockstorLayoutView.extend({
 		}else{
 			this.taskDefIdNull = false;
 		}
-		this.initHandlebarHelpers();
 	},
 
 	render: function() {
@@ -69,6 +68,7 @@ AddScheduledTaskView = RockstorLayoutView.extend({
 				pool: this.taskDef.pool(),
 				maxCount: this.taskDef.max_count(),
 				visible: this.taskDef.visible(),
+				writable: this.taskDef.writable(),
 				enabled: this.taskDef.get('enabled'),
 		};
 		var isSnapshot = false;
@@ -90,6 +90,8 @@ AddScheduledTaskView = RockstorLayoutView.extend({
 		if (!_.isUndefined(this.taskDefId) && !_.isNull(this.taskDefId)) {
 			var crontab = this.taskDef.get('crontab');
 			$('#cron').cron("value", crontab);
+			var crontabwindow = _.isNull(this.taskDef.get('crontabwindow')) ? "*-*-*-*-*-*" : this.taskDef.get('crontabwindow'); // render execution window, on null set to *-*-*-*-*-*
+			$('#cron-window').cron_window("value", crontabwindow);
 		}
 		this.renderOptionalFields();
 		this.$('#start_date').datepicker();
@@ -149,6 +151,7 @@ AddScheduledTaskView = RockstorLayoutView.extend({
 					var req_type = 'PUT';
 				}
 				data.crontab = $("#cron").cron("value");
+				data.crontabwindow = $("#cron-window").cron_window("value"); // post execution window value
 				$.ajax({
 					url: url,
 					type: req_type,
@@ -177,7 +180,7 @@ AddScheduledTaskView = RockstorLayoutView.extend({
 		}
 		if (taskType == 'snapshot') {
 			this.$('#optional-fields').html(this.snapshotFieldsTemplate({
-				shares: this.shares,
+				shares: this.shares.toJSON(),
 				taskDef: this.taskDef,
 				taskDefId: this.taskDefId,
 				taskDefIdNull: this.taskDefIdNull,
@@ -185,7 +188,7 @@ AddScheduledTaskView = RockstorLayoutView.extend({
 			}));
 		} else {
 			this.$('#optional-fields').html(this.scrubFieldsTemplate({
-				pools: this.pools,
+				pools: this.pools.toJSON(),
 				taskDef: this.taskDef,
 				taskDefId: this.taskDefId,
 				taskDefIdNull: this.taskDefIdNull,
@@ -201,33 +204,4 @@ AddScheduledTaskView = RockstorLayoutView.extend({
 		event.preventDefault();
 		app_router.navigate('scheduled-tasks', {trigger: true});
 	},
-
-	initHandlebarHelpers: function(){
-		Handlebars.registerHelper('display_taskType_options', function(){
-			var html = '',
-			_this = this;
-			_.each(_this.taskTypes, function(taskType, index) {
-				html += '<option value="' + taskType + '"> ' + taskType + '</option>';
-			});
-			return new Handlebars.SafeString(html);
-		});
-
-		Handlebars.registerHelper('display_snapshot_shares', function(){
-			var html = '';
-			this.shares.each(function(share, index) {
-				html += '<option value="' + share.get('name') + '"> ' + share.get('name') + '</option>';
-			});
-			return new Handlebars.SafeString(html);
-		});
-
-		Handlebars.registerHelper('display_scrub_pools', function(){
-			var html = '';
-			this.pools.each(function(pool, index) {
-				html += '<option value="' + pool.get('name') + '"> ' + pool.get('name') + '</option>';
-			});
-			return new Handlebars.SafeString(html);
-		});
-
-	}
-
 });

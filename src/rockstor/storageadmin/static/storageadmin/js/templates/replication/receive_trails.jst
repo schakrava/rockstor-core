@@ -19,12 +19,14 @@
  */
 </script>
 
-{{display_h4}}
+<h4>Replication receive history for ( {{replicaShare.appliance}} : {{replicaShare.src_share}}
+ to {{replicaShare.pool}} : {{replicaShare.share}} )</h4>
+ 
 {{#if collectionNotEmpty}}
   <div class="row">
     <div class="col-md-12">
       <div class="messages"></div>
-      <table id="receive-trails-table" class="table table-condensed table-bordered table-hover table-striped share-table tablesorter" summary="Replica trails">
+      <table id="receive-trails-table" class="table table-bordered table-striped share-table data-table" width="100%" summary="Replica trails">
         <thead>
           <tr>
             <th scope="col" abbr="ID">ID</th>
@@ -37,10 +39,30 @@
           </tr>
         </thead>
         <tbody>
-        {{replicaTrails_receive_table}}
+        {{#each replicaReceiveColl}}
+            <tr>
+                <td>{{this.id}}</td>
+                <td>{{this.snap_name}}</td>
+                <td>{{getDateFormat this.receive_pending}}</td>
+                <td>{{#if this.end_ts}}
+                        {{getDateFormat this.end_ts}}
+                    {{/if}}
+                </td>
+                <td>{{#ifStatusSuccess this.status}}
+                        {{this.status}}
+                    {{else}}
+                        <i class="fa fa-exclamation-circle" title="{{this.error}}" rel="tooltip"></i>&nbsp;{{this.status}}
+                    {{/ifStatusSuccess}}
+                </td>
+                <td>{{#if this.end_ts}}
+                    {{getDuration this.end_ts receive_pending}}
+                    {{/if}}
+                </td>
+                <td>{{humanReadableSize this.kb_received}} at {{getRate this.end_ts this.receive_pending this.kb_received}} /sec.</td>
+            </tr>
+          {{/each}}
         </tbody>
       </table>
-      <div>{{pagination}}</div>
     </div>
   </div>
 {{/if}}

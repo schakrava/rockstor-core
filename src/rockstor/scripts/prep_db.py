@@ -36,12 +36,21 @@ def register_services():
         'S.M.A.R.T': 'smartd',
         'NUT-UPS': 'nut',
         'ZTaskd': 'ztask-daemon',
-        'Bootstrap': 'rockstor-bootstrap', }
+        'Bootstrap': 'rockstor-bootstrap',
+        'Shell In A Box': 'shellinaboxd',
+        'Rockstor': 'rockstor'
+        }
+
+    services_configs = {
+        'shellinaboxd': '{"detach": false, "css": "white-on-black", "shelltype": "LOGIN"}'
+        }
 
     for k,v in services.items():
         try:
             so = Service.objects.get(name=v)
             so.display_name = k
+            if v in services_configs:
+                so.config = services_configs[v]
         except Service.DoesNotExist:
             so = Service(display_name=k, name=v)
         finally:

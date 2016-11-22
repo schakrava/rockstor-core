@@ -16,13 +16,15 @@ You should have received a copy of the GNU General Public License
 along with this program. If not, see <http://www.gnu.org/licenses/>.
 """
 
-from storageadmin.models import NetworkInterface
+from django.db import models
+from django.core.validators import MinValueValidator, MaxValueValidator
 
-def mgmt_ip():
-    mgmt_ifs = NetworkInterface.objects.filter(itype='management')
-    if (len(mgmt_ifs) > 0):
-        return mgmt_ifs[0].ipaddr
-    return ''
+class Pincard(models.Model):
+    user = models.IntegerField()
+    pin_number = models.IntegerField(validators=[MinValueValidator(1),
+                                                 MaxValueValidator(24)])
+    pin_code = models.CharField(max_length=32,null=False)
 
-def main():
-    return mgmt_ip()
+    class Meta:
+        unique_together = ('user','pin_number')
+        app_label = 'storageadmin'

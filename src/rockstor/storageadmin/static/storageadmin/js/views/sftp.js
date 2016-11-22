@@ -40,8 +40,6 @@ SFTPView  = RockstorLayoutView.extend({
 	this.service = new Service({name: this.serviceName});
 	this.dependencies.push(this.service);
 	this.shares = new ShareCollection();
-	// dont paginate shares for now
-	this.shares.pageSize = 1000;
 	this.dependencies.push(this.shares);
 	this.updateFreq = 5000;
 	this.initHandlebarHelpers();
@@ -78,6 +76,7 @@ SFTPView  = RockstorLayoutView.extend({
 	}
 
 	$(this.el).html(this.template({
+		sftpShare: this.collection.toJSON(),
 	    collection: this.collection,
 	    collectionNotEmpty: !this.collection.isEmpty(),
 	    freeShares: this.freeShares,
@@ -85,7 +84,8 @@ SFTPView  = RockstorLayoutView.extend({
 	    service: this.service
 	}));
 
-
+	this.renderDataTables();
+	
 	//initalize Bootstrap Switch
 	this.$("[type='checkbox']").bootstrapSwitch();
 	this.$('input[name="sftp-service-checkbox"]').bootstrapSwitch('state', this.service.get('status'), true);
@@ -194,29 +194,15 @@ SFTPView  = RockstorLayoutView.extend({
     },
 
     initHandlebarHelpers: function(){
-	Handlebars.registerHelper('display_sftp_shares', function(){
-	    var html = '';
-	    this.collection.each(function(sftpShare) {
-		html += '<tr>';
-		html += '<td>' + sftpShare.get("share") + '</td>';
-		html += '<td>';
-		if (sftpShare.get('editable') == 'ro') {
-		    html += 'Read only';
-		} else {
-		    html += 'Writable';
-		}
-		html += '</td>';
-		html += '<td>';
-		html += '<a href="#" class="delete-sftp-share" data-id="' + sftpShare.id + '"><i class="glyphicon glyphicon-trash"></i></a>';
-		html += '</td>';
-		html += '</tr>';
-	    });
-
-	    return new Handlebars.SafeString(html);
-	});
+    	Handlebars.registerHelper('displaySftpPermission', function(sftpEditable){
+    	    var html = '';
+    	    if (sftpEditable == 'ro') {
+    		    html += 'Read only';
+    		} else {
+    		    html += 'Writable';
+    		}
+    	    return new Handlebars.SafeString(html);
+    	});
     }
 
 });
-
-//Add pagination
-Cocktail.mixin(SFTPView, PaginationMixin);

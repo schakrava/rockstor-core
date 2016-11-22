@@ -22,6 +22,7 @@ from django.core.validators import validate_email
 from django.conf import settings
 from storageadmin.models import Group
 import grp
+import chardet
 
 
 class User(models.Model):
@@ -44,7 +45,10 @@ class User(models.Model):
         if (self.group is not None):
             return self.group.groupname
         if (self.gid is not None):
-            return grp.getgrgid(self.gid).gr_name
+            groupname = grp.getgrgid(self.gid).gr_name
+            charset = chardet.detect( groupname )
+            groupname = groupname.decode( charset['encoding'] )
+            return groupname
         return None
 
     @property
@@ -54,6 +58,22 @@ class User(models.Model):
     @managed_user.setter
     def managed_user(self, val, *args, **kwargs):
         self.editable = val
+
+    @property
+    def has_pincard(self, *args, **kwargs):
+        return getattr(self, 'pincard_exist', False)
+
+    @has_pincard.setter
+    def has_pincard(self, val, *args, **kwargs):
+        self.pincard_exist = val
+
+    @property
+    def pincard_allowed(self, *args, **kwargs):
+        return getattr(self, 'pincard_enabled', 'no')
+
+    @pincard_allowed.setter
+    def pincard_allowed(self, val, *args, **kwargs):
+        self.pincard_enabled = val
 
     class Meta:
         app_label = 'storageadmin'

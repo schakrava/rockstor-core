@@ -2,7 +2,7 @@
 <h3>RockStor Appliances that are known to this one</h3>
 <div class="row">
   <div class="col-md-12">
-    <table class="table table-condensed table-bordered table-hover table-striped tablesorter"style="width: 100%">
+    <table class="table table-bordered table-striped data-table" width="100%">
       <thead>
         <tr>
           <th scope="col" abbr="ID">Appliance ID</th>
@@ -13,11 +13,35 @@
         </tr>
       </thead>
       <tbody>
-      {{print_appliances_tbody}}
+      {{#each appliances}}
+      <tr>
+        <td>{{this.uuid}}</td>
+        <td><i class="fa fa-desktop"></i>&nbsp;
+        {{#if this.current_appliance}}
+            {{this.ip}} <span class="required">*</span>
+        {{else}}
+            <a href="https://{{this.ip}}:{{this.mgmt_port}}" target="_blank">{{this.ip}}</a>
+        {{/if}}
+        </td>
+        <td>
+        {{#if this.current_appliance}}
+            <a href="#appliances" id="hostname" data-id="{{this.id}}">{{this.hostname}}</a>
+        {{else}}
+            {{this.hostname}}
+        {{/if}}
+        </td>
+        <td>{{this.mgmt_port}}</td>
+        <td>
+        {{#unless this.current_appliance}}
+            <a class="delete-appliance" id="{{this.ip}}" data-id="{{this.id}}" href="#">
+            <i class="glyphicon glyphicon-trash"></i></a>
+        {{else}}
+            N/A
+        {{/unless}}
+        </td>
+      </tr>
+      {{/each}}
     </table>
-    <div>
-    {{pagination}}
-    </div>
     ( <span class="required">*</span> - current appliance )
   </div> <!-- col-md-12 -->
 </div> <!-- row -->

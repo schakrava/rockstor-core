@@ -24,13 +24,14 @@ import pickle
 import time
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.decorators import api_view
 from django.db import transaction
 from storageadmin.serializers import PoolInfoSerializer
 from storageadmin.models import (Disk, Pool, Share, PoolBalance)
-from storageadmin.views import DiskMixin
 from fs.btrfs import (add_pool, pool_usage, resize_pool, umount_root,
-                      btrfs_uuid, mount_root, remount, get_pool_info,
-                      pool_raid, start_balance)
+                      btrfs_uuid, mount_root, start_balance, usage_bound,
+                      remove_share)
+from system.osi import remount
 from storageadmin.util import handle_exception
 from django.conf import settings
 import rest_framework_custom as rfc
@@ -85,6 +86,7 @@ class PoolMixin(object):
             'nospace_cache': None,
             'space_cache': None,
             'ssd': None,
+            'nossd': None,
             'ssd_spread': None,
             'thread_pool': int,
             'noatime': None,
@@ -161,7 +163,7 @@ class PoolMixin(object):
                 for m in mount_map[share]:
                     try:
                         remount(m, mnt_options)
-                    except Exception, e:
+                    except Exception as e:
                         logger.exception(e)
                         failed_remounts.append(m)
         if (len(failed_remounts) > 0):
@@ -271,13 +273,13 @@ class PoolListView(PoolMixin, rfc.GenericView):
                 d.pool = p
                 d.save()
             add_pool(p, dnames)
-            p.size = pool_usage(mount_root(p))[0]
+            p.size = p.usage_bound()
             p.uuid = btrfs_uuid(dnames[0])
             p.save()
             return Response(PoolInfoSerializer(p).data)
 
 
-class PoolDetailView(DiskMixin, PoolMixin, rfc.GenericView):
+class PoolDetailView(PoolMixin, rfc.GenericView):
     def get(self, *args, **kwargs):
         try:
             pool = Pool.objects.get(name=self.kwargs['pname'])
@@ -329,7 +331,8 @@ class PoolDetailView(DiskMixin, PoolMixin, rfc.GenericView):
                                  'from the Storage -> Disks screen of the '
                                  'web-ui' % d.name)
                         handle_exception(Exception(e_msg), request)
-                if (new_raid == 'single'):
+
+                if (pool.raid != 'single' and new_raid == 'single'):
                     e_msg = ('Pool migration from %s to %s is not supported.'
                              % (pool.raid, new_raid))
                     handle_exception(Exception(e_msg), request)
@@ -345,16 +348,16 @@ class PoolDetailView(DiskMixin, PoolMixin, rfc.GenericView):
                     handle_exception(Exception(e_msg), request)
 
                 if (new_raid == 'raid5' and num_total_disks < 2):
-                    e_msg == ('A minimum of Two drives are required for the '
+                    e_msg = ('A minimum of Two drives are required for the '
                               'raid level: raid5')
                     handle_exception(Exception(e_msg), request)
 
                 if (PoolBalance.objects.filter(
                         pool=pool,
-                        status__regex=r'(started|running)').exists()):
-                    e_msg = ('A Balance process is already running for this '
-                             'pool(%s). Resize is not supported during a '
-                             'balance process.' % pool.name)
+                        status__regex=r'(started|running|cancelling|pausing|paused)').exists()):
+                    e_msg = ('A Balance process is already running or paused '
+                             'for this pool(%s). Resize is not supported '
+                             'during a balance process.' % pool.name)
                     handle_exception(Exception(e_msg), request)
 
                 resize_pool(pool, dnames)
@@ -380,7 +383,7 @@ class PoolDetailView(DiskMixin, PoolMixin, rfc.GenericView):
                         handle_exception(Exception(e_msg), request)
                 remaining_disks = (Disk.objects.filter(pool=pool).count() -
                                    num_new_disks)
-                if (pool.raid in ('raid0', 'single',)):
+                if (pool.raid == 'raid0'):
                     e_msg = ('Disks cannot be removed from a pool with this '
                              'raid(%s) configuration' % pool.raid)
                     handle_exception(Exception(e_msg), request)
@@ -413,11 +416,11 @@ class PoolDetailView(DiskMixin, PoolMixin, rfc.GenericView):
                 size_cut = 0
                 for d in disks:
                     size_cut += d.size
-                if (size_cut >= usage[2]):
+                if (size_cut >= usage):
                     e_msg = ('Removing these(%s) disks may shrink the pool by '
                              '%dKB, which is greater than available free space'
                              ' %dKB. This is not supported.' %
-                             (dnames, size_cut, usage[2]))
+                             (dnames, size_cut, usage))
                     handle_exception(Exception(e_msg), request)
 
                 resize_pool(pool, dnames, add=False)
@@ -432,13 +435,13 @@ class PoolDetailView(DiskMixin, PoolMixin, rfc.GenericView):
             else:
                 e_msg = ('command(%s) is not supported.' % command)
                 handle_exception(Exception(e_msg), request)
-            usage = pool_usage('/%s/%s' % (settings.MNT_PT, pool.name))
-            pool.size = usage[0]
+            pool.size = pool.usage_bound()
             pool.save()
             return Response(PoolInfoSerializer(pool).data)
 
     @transaction.atomic
-    def delete(self, request, pname):
+    def delete(self, request, pname, command=''):
+        force = True if (command == 'force') else False
         with self._handle_exception(request):
             try:
                 pool = Pool.objects.get(name=pname)
@@ -452,14 +455,26 @@ class PoolDetailView(DiskMixin, PoolMixin, rfc.GenericView):
                 handle_exception(Exception(e_msg), request)
 
             if (Share.objects.filter(pool=pool).exists()):
-                e_msg = ('Pool(%s) is not empty. Delete is not allowed until '
-                         'all shares in the pool are deleted' % (pname))
-                handle_exception(Exception(e_msg), request)
+                if not force:
+                    e_msg = ('Pool(%s) is not empty. Delete is not allowed until '
+                             'all shares in the pool are deleted' % (pname))
+                    handle_exception(Exception(e_msg), request)
+                for so in Share.objects.filter(pool=pool):
+                    remove_share(so.pool, so.subvol_name, so.pqgroup, force=force)
             pool_path = ('%s%s' % (settings.MNT_PT, pname))
             umount_root(pool_path)
             pool.delete()
             try:
                 self._update_disk_state()
-            except Exception, e:
+            except Exception as e:
                 logger.error('Exception while updating disk state: %s' % e.__str__())
             return Response()
+
+
+@api_view()
+def get_usage_bound(request):
+    """Simple view to relay the computed usage bound to the front end."""
+    disk_sizes = [int(size) for size in
+                  request.query_params.getlist('disk_sizes[]')]
+    raid_level = request.query_params.get('raid_level', 'single')
+    return Response(usage_bound(disk_sizes, len(disk_sizes), raid_level))

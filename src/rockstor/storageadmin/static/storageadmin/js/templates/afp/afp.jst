@@ -17,7 +17,7 @@
     <div class="messages"></div>
     <!-- Content -->
     {{#if collectionNotEmpty}}
-      <table id="afp-exports-table" class="table table-condensed table-bordered table-hover table-striped share-table tablesorter" summary="List of afp exports">
+      <table id="afp-exports-table" class="table table-bordered table-striped share-table data-table" width="100%" summary="List of afp exports">
         <thead>
           <tr>
             <th scope="col" abbr="Share name">Share</th>
@@ -26,11 +26,20 @@
           </tr>
         </thead>
         <tbody>
-          {{display_afp_shares}}
+          {{#each afpShare}}
+            <tr>
+                <td>{{this.share}}</td>
+                <td>{{this.time_machine}}</td>
+                <td><a href="#afp/edit/{{this.id}}"><i class="glyphicon glyphicon-pencil"></i></a>&nbsp;
+                <a href="#" class="delete-afp-share" data-share="{{this.share}}" data-id="{{this.id}}">
+                <i class="glyphicon glyphicon-trash"></i></a>
+                </td>
+            </tr>
+          {{/each}}
         </tbody>
       </table>
       {{else}}
-      <table id="afp-exports-table" class="table table-condensed table-bordered table-hover table-striped share-table tablesorter" summary="List of afp exports">
+      <table id="afp-exports-table" class="table table-condensed table-bordered table-hover table-striped share-table tablesorter" width="100%" summary="List of afp exports">
         <tbody>
           <tr>
             <td colspan="5">

@@ -21,17 +21,19 @@ from storageadmin.exceptions import RockStorAPIException
 from rest_framework.response import Response
 from django.db import transaction
 from storageadmin.models import (Disk, Pool, Share)
-from fs.btrfs import (scan_disks, wipe_disk, blink_disk, enable_quota,
-                      btrfs_uuid, pool_usage, mount_root, get_pool_info,
-                      pool_raid, enable_quota)
+from fs.btrfs import enable_quota, btrfs_uuid, pool_usage, mount_root, \
+    get_pool_info, pool_raid
 from storageadmin.serializers import DiskInfoSerializer
 from storageadmin.util import handle_exception
 from share_helpers import (import_shares, import_snapshots)
 from django.conf import settings
 import rest_framework_custom as rfc
 from system import smart
+from system.osi import set_disk_spindown, enter_standby, get_dev_byid_name, \
+    wipe_disk, blink_disk, scan_disks
 from copy import deepcopy
 import uuid
+import json
 import logging
 
 logger = logging.getLogger(__name__)
@@ -72,11 +74,13 @@ class DiskMixin(object):
             # N.B. do not optimize by re-using uuid index as this could lead
             # to a non refreshed webui acting upon an entry that is different
             # from that shown to the user.
-            do.name = str(uuid.uuid4()).replace('-', '')  # 32 chars long
+            do.name = 'detached-' + str(uuid.uuid4()).replace('-', '')
             # Delete duplicate or fake by serial number db disk entries.
             # It makes no sense to save fake serial number drives between scans
-            # as on each scan the serial number is re-generated anyway.
-            if (do.serial in serial_numbers_seen) or (len(do.serial) == 48):
+            # as on each scan the serial number is re-generated (fake) anyway.
+            # Serial numbers beginning with 'fake-serial-' are from scan_disks.
+            if (do.serial in serial_numbers_seen) or (
+                    re.match('fake-serial-', do.serial) is not None):
                 logger.info('Deleting duplicate or fake (by serial) Disk db '
                             'entry. Serial = %s' % do.serial)
                 do.delete()  # django >=1.9 returns a dict of deleted items.
@@ -98,15 +102,25 @@ class DiskMixin(object):
         for d in disks:
             # start with an empty disk object
             dob = None
+            # Convert our transient but just scanned so current sda type name
+            # to a more useful by-id type name as found in /dev/disk/by-id
+            byid_disk_name, is_byid = get_dev_byid_name(d.name, True)
             # If the db has an entry with this disk's serial number then
             # use this db entry and update the device name from our recent scan.
             if (Disk.objects.filter(serial=d.serial).exists()):
                 dob = Disk.objects.get(serial=d.serial)
-                dob.name = d.name
+                #dob.name = d.name
+                dob.name = byid_disk_name
             else:
                 # We have an assumed new disk entry as no serial match in db.
                 # Build a new entry for this disk.
-                dob = Disk(name=d.name, serial=d.serial)
+                #dob = Disk(name=d.name, serial=d.serial)
+                # N.B. we may want to force a fake-serial here if is_byid False,
+                # that way we flag as unusable disk as no by-id type name found.
+                # It may already have been set though as the only by-id
+                # failures so far are virtio disks with no serial so scan_disks
+                # will have already given it a fake serial in d.serial.
+                dob = Disk(name=byid_disk_name, serial=d.serial)
             # Update the db disk object (existing or new) with our scanned info
             dob.size = d.size
             dob.parted = d.parted
@@ -121,20 +135,59 @@ class DiskMixin(object):
                 dob.parted = True  # overload use of parted as non btrfs flag.
                 # N.B. this overload use may become redundant with the addition
                 # of the Disk.role field.
-                if d.fstype == 'isw_raid_member' \
-                        or d.fstype == 'linux_raid_member':
-                    # transfer fstype raid member indicator to role field
-                    dob.role = d.fstype
-                else:
-                    # No identified role from scan_disks() fstype indicator so
-                    # set as None to update db of new drive role. If we don't
-                    # do this then the same drive when re-deployed will inherit
-                    # it's previous role in the db which may be desired but in
-                    # the case of these raid member indicators from scan_disks()
-                    # we have the current truth provided.
-                    # N.B. this if else could be expanded to accommodate other
-                    # roles based on the fs found and also take heed of an
-                    # existing devices db role entry prior to overwriting.
+            # Update the role field with scan_disks findings, currently only
+            # mdraid membership type based on fstype info. In the case of
+            # these raid member indicators from scan_disks() we have the
+            # current truth provided so update the db role status accordingly.
+            # N.B. this if else could be expanded to accommodate other
+            # roles based on the fs found
+            if d.fstype == 'isw_raid_member' or d.fstype == 'linux_raid_member':
+                # We have an indicator of mdraid membership so update existing
+                # role info if any.
+                # N.B. We have a minor legacy issue in that prior to using json
+                # format for the db role field we stored one of 2 strings.
+                # if these 2 strings are found then ignore them as we then
+                # overwrite with our current finding and in the new json format.
+                # I.e. non None could also be a legacy entry so follow overwrite
+                # path when legacy entry found by treating as a None entry.
+                # TODO: When we reset migrations the following need only check
+                # TODO: "dob.role is not None"
+                if dob.role is not None and dob.role != 'isw_raid_member' \
+                        and dob.role != 'linux_raid_member':
+                    # get our known roles into a dictionary
+                    known_roles = json.loads(dob.role)
+                    # create or update an mdraid dictionary entry
+                    known_roles['mdraid'] = str(d.fstype)
+                    # return updated dict to json format and store in db object
+                    dob.role = json.dumps(known_roles)
+                else:  # We have a dob.role = None so just insert our new role.
+                    # Also applies to legacy pre json role entries.
+                    dob.role = '{"mdraid": "' + d.fstype + '"}'  # json string
+            else:  # We know this disk is not an mdraid raid member.
+                # No identified role from scan_disks() fstype value (mdraid
+                # only for now )so we preserve any prior known roles not
+                # exposed by scan_disks but remove the mdraid role if found.
+                # TODO: When we reset migrations the following need only check
+                # TODO: "dob.role is not None"
+                if dob.role is not None and dob.role != 'isw_raid_member' \
+                        and dob.role != 'linux_raid_member':
+                    # remove mdraid role if found but preserve prior roles
+                    # which should now only be in json format
+                    known_roles = json.loads(dob.role)
+                    if 'mdraid' in known_roles:
+                        if len(known_roles) > 1:
+                            # mdraid is not the only entry so we have to pull
+                            # out only mdraid from dict and convert back to json
+                            del known_roles['mdraid']
+                            dob.role = json.dumps(known_roles)
+                        else:
+                            # mdraid was the only entry so we need not bother
+                            # with dict edit and json conversion only to end up
+                            # with an empty json {} so revert to default 'None'.
+                            dob.role = None
+                else:  # Empty or legacy role entry.
+                    # We have either None or a legacy mdraid role when this disk
+                    # is no longer an mdraid member. We can now assert None.
                     dob.role = None
             # If our existing Pool db knows of this disk's pool via it's label:
             if (Pool.objects.filter(name=d.label).exists()):
@@ -153,14 +206,14 @@ class DiskMixin(object):
             # the attached disk is our root disk (flagged by scan_disks)
             if (dob.pool is None and d.root is True):
                 # setup our special root disk db entry in Pool
-                #@todo: dynamically retrieve raid level.
+                # TODO: dynamically retrieve raid level.
                 p = Pool(name=d.label, raid='single', role='root')
                 p.disk_set.add(dob)
                 p.save()
                 # update disk db object to reflect special root pool status
                 dob.pool = p
                 dob.save()
-                p.size = pool_usage(mount_root(p))[0]
+                p.size = p.usage_bound()
                 enable_quota(p)
                 p.uuid = btrfs_uuid(dob.name)
                 p.save()
@@ -170,12 +223,27 @@ class DiskMixin(object):
         for do in Disk.objects.all():
             # find all the not offline db entries
             if (not do.offline):
-                # We have an attached disk db entry
-                if (re.match('vd|md|mmcblk', do.name) is not None):
-                    # Virtio disks (named vd*), md devices (named md*), and
-                    # an sdcard reader that provides devs named mmcblk* have
+                # We have an attached disk db entry.
+                # Since our Disk.name model now uses by-id type names we can
+                # do cheap matches to the beginnings of these names to find
+                # virtio, md, or sdcard devices which are assumed to have no
+                # SMART capability.
+                # We also disable devices smart support when they have a
+                # fake serial number as ascribed by scan_disks as any SMART
+                # data collected is then less likely to be wrongly associated
+                # with the next device that takes this temporary drive's name.
+                # Also note that with no serial number some device types will
+                # not have a by-id type name expected by the smart subsystem.
+                # This has only been observed in no serial virtio devices.
+                if (re.match('fake-serial-', do.serial) is not None) or \
+                        (re.match('virtio-|md-|mmc-|nvme-', do.name) is not None):
+                    # Virtio disks (named virtio-*), md devices (named md-*),
+                    # and an sdcard reader that provides devs named mmc-* have
                     # no smart capability so avoid cluttering logs with
-                    # exceptions on these types of devices.
+                    # exceptions on probing these with smart.available.
+                    # nvme not yet supported by CentOS 7 smartmontools:
+                    # https://www.smartmontools.org/ticket/657
+                    # Thanks to @snafu in rockstor forum post 1567 for this.
                     do.smart_available = do.smart_enabled = False
                     continue
                 # try to establish smart availability and status and update db
@@ -263,10 +331,14 @@ class DiskDetailView(rfc.GenericView):
                 return self._toggle_smart(dname, request)
             if (command == 'smartcustom-drive'):
                 return self._smartcustom_drive(dname, request)
+            if (command == 'spindown-drive'):
+                return self._spindown_drive(dname, request)
+            if (command == 'pause'):
+                return self._pause(dname, request)
 
         e_msg = ('Unsupported command(%s). Valid commands are wipe, btrfs-wipe,'
                  ' btrfs-disk-import, blink-drive, enable-smart, disable-smart,'
-                 ' smartcustom-drive' % command)
+                 ' smartcustom-drive, spindown-drive, pause' % command)
         handle_exception(Exception(e_msg), request)
 
     @transaction.atomic
@@ -281,7 +353,7 @@ class DiskDetailView(rfc.GenericView):
     @transaction.atomic
     def _smartcustom_drive(self, dname, request):
         disk = self._validate_disk(dname, request)
-        # todo Check on None, null, or '' for default in next command
+        # TODO: Check on None, null, or '' for default in next command
         custom_smart_options = str(
             request.data.get('smartcustom_options', ''))
         # strip leading and trailing white space chars before entry in db
@@ -307,7 +379,7 @@ class DiskDetailView(rfc.GenericView):
                 do.save()
                 mount_root(po)
             po.raid = pool_raid('%s%s' % (settings.MNT_PT, po.name))['data']
-            po.size = pool_usage('%s%s' % (settings.MNT_PT, po.name))[0]
+            po.size = po.usage_bound()
             po.save()
             enable_quota(po)
             import_shares(po, request)
@@ -338,4 +410,20 @@ class DiskDetailView(rfc.GenericView):
         blink_time = int(request.data.get('blink_time', 15))
         sleep_time = int(request.data.get('sleep_time', 5))
         blink_disk(disk.name, total_time, blink_time, sleep_time)
+        return Response()
+
+    @classmethod
+    def _spindown_drive(cls, dname, request):
+        disk = cls._validate_disk(dname, request)
+        spindown_time = int(request.data.get('spindown_time', 20))
+        spindown_message = str(
+            request.data.get('spindown_message', 'message issue!'))
+        apm_value = int(request.data.get('apm_value', 0))
+        set_disk_spindown(disk.name, spindown_time, apm_value, spindown_message)
+        return Response()
+
+    @classmethod
+    def _pause(cls, dname, request):
+        disk = cls._validate_disk(dname, request)
+        enter_standby(disk.name)
         return Response()

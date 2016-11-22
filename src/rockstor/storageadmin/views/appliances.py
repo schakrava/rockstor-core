@@ -18,10 +18,10 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 import requests
 import json
-import uuid
 from rest_framework.response import Response
 from django.db import transaction
-from storageadmin.models import Appliance
+from storageadmin.models import (Appliance, EmailClient)
+from storageadmin.views.email_client import update_generic
 from storageadmin.util import handle_exception
 from storageadmin.serializers import ApplianceSerializer
 
@@ -80,8 +80,8 @@ class ApplianceListView(rfc.GenericView):
     @transaction.atomic
     def post(self, request, *args, **kwargs):
         with self._handle_exception(request):
-            ip = request.data['ip']
-            current_appliance = request.data['current_appliance']
+            ip = request.data.get('ip', '')
+            current_appliance = request.data.get('current_appliance')
             # authenticate if not adding current appliance
             if (Appliance.objects.filter(ip=ip).exists()):
                 e_msg = ('The appliance with ip = %s already exists and '
@@ -112,9 +112,7 @@ class ApplianceListView(rfc.GenericView):
                                       client_secret=client_secret)
                 appliance.save()
             else:
-                appliance_uuid = ('%s-%s' % (hostid()[0][0],
-                                             str(uuid.uuid4())))
-                appliance = Appliance(uuid=appliance_uuid, ip=ip,
+                appliance = Appliance(uuid=hostid(), ip=ip,
                                       current_appliance=True)
                 if ('hostname' in request.data):
                     appliance.hostname = request.data['hostname']
@@ -145,6 +143,9 @@ class ApplianceDetailView(rfc.GenericView):
             appliance.hostname = request.data['hostname']
             appliance.save()
             sethostname(appliance.hostname)
+            if (EmailClient.objects.count() > 0):
+                current_email = EmailClient.objects.all()[0]
+                update_generic(current_email.sender)
             return Response()
         except Exception, e:
             logger.exception(e)

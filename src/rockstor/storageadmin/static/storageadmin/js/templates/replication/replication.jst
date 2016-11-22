@@ -45,7 +45,7 @@
     <div class="col-md-12">
     <div class="messages"></div>
     <!-- Content -->
-    <table id="replicas-table" class="table table-condensed table-bordered table-hover table-striped share-table tablesorter" summary="List of replicas">
+    <table id="replicas-table" class="table table-bordered table-striped share-table data-table" width="100%" summary="List of replicas">
     <thead>
     <tr>
     <th scope="col" abbr="Share">Task name </th>
@@ -58,10 +58,22 @@
     </tr>
     </thead>
     <tbody>
-    {{replication_send_table}}
+    {{#each replicaColl}}
+        <tr>
+            <td><a href="#edit-replication-task/{{this.id}}">{{this.task_name}}</a>&nbsp;
+                <a href="#" data-task-name="{{this.task_name}}" data-task-id="{{this.id}}" data-action="delete">
+                <i class="glyphicon glyphicon-trash" rel="tooltip" title="Delete"></i></a>
+            </td>
+            <td>{{this.share}}</td>
+            <td>{{this.appliance}}</td>
+            <td>{{this.dpool}}</td>
+            <td>{{getFrequency this.crontab}}</td>
+            <td>{{lastBackup this.id}}</td>
+            <td><input type="checkbox" name="replica-task-checkbox" data-replica-id="{{this.id}}" data-size="mini" {{#if this.enabled}} checked {{/if}}></td>
+        </tr>
+    {{/each}}
     </tbody>
     </table>
-    <div>{{pagination}}</div>
     </div> <!-- col-md-12 -->
     </div> <!-- row -->
 {{else}}

@@ -24,13 +24,14 @@
  *
  */
 
-DisksView = Backbone.View.extend({
+DisksView = RockstorLayoutView.extend({
     events: {
         "click #setup": "setupDisks",
         'click .wipe': 'wipeDisk',
         'click .delete': 'deleteDisk',
         'click .btrfs_wipe': 'btrfsWipeDisk',
         'click .btrfs_import': 'btrfsImportDisk',
+        'click .pause': 'pauseDisk',
         'switchChange.bootstrapSwitch': 'smartToggle'
     },
 
@@ -54,21 +55,38 @@ DisksView = Backbone.View.extend({
         }
         $(this.el).html(this.template({collection: this.collection}));
         this.$("#disks-table-ph").html(this.disks_table_template({
+            diskCollection: this.collection.toJSON(),
             collection: this.collection,
             collectionNotEmpty: !this.collection.isEmpty()
         }));
 
-        this.$("#disks-table").tablesorter();
         this.$("[rel=tooltip]").tooltip({
             placement: "right",
             container: '#disks-table'
         });
-
+        
         //initialize bootstrap switch
         this.$("[type='checkbox']").bootstrapSwitch();
         this.$("[type='checkbox']").bootstrapSwitch('onColor', 'success'); //left side text color
         this.$("[type='checkbox']").bootstrapSwitch('offColor', 'danger'); //right side text color
-
+        
+        
+      //added ext func to sort over SMART input checkboxes
+    	$.fn.dataTable.ext.order['dom-checkbox'] = function ( settings, col ) {
+    		return this.api().column( col, {order:'index'} ).nodes().map( function ( td, i ) {
+            	return $('input', td).prop('checked') ? '1' : '0';
+        		});
+    	}
+    	//Added columns definition for sorting purpose
+    	$('table.data-table').DataTable({
+    	    "iDisplayLength": 15,
+    	    "aLengthMenu": [[15, 30, 45, -1], [15, 30, 45, "All"]],
+    	    "columns": [
+    	    null,null,null,null,null,null,null,null,null,
+    	    { "orderDataType": "dom-checkbox" }
+    	    ]
+    	});
+    	
     },
 
     setupDisks: function () {
@@ -81,6 +99,27 @@ DisksView = Backbone.View.extend({
             _this.collection.page = 1;
             _this.collection.fetch();
         });
+    },
+
+    pauseDisk: function (event) {
+        var _this = this;
+        if (event) event.preventDefault();
+        var button = $(event.currentTarget);
+        if (buttonDisabled(button)) return false;
+        disableButton(button);
+        var diskName = button.data('disk-name');
+        if (confirm('Are you sure you want to force the following device into Standby mode ' + diskName + '?')) {
+            $.ajax({
+                url: '/api/disks/' + diskName + '/pause',
+                type: 'POST',
+                success: function (data, status, xhr) {
+                    _this.render();
+                },
+                error: function (xhr, status, error) {
+                    enableButton(button);
+                }
+            });
+        }
     },
 
     wipeDisk: function (event) {
@@ -103,6 +142,7 @@ DisksView = Backbone.View.extend({
             });
         }
     },
+
     btrfsWipeDisk: function (event) {
         var _this = this;
         if (event) event.preventDefault();
@@ -171,86 +211,92 @@ DisksView = Backbone.View.extend({
     },
 
     initHandlebarHelpers: function () {
-        Handlebars.registerHelper('display_disks_tbody', function () {
-
-            var html = '',
-                warning = 'Disk names may change unfavourably upon reboot leading to inadvertent drive reallocation and potential data loss. This error is caused by the source of these disks such as your Hypervisor or SAN. Please ensure that disks are provided with unique serial numbers before proceeding further.';
-
-            this.collection.each(function (disk, index) {
-                var diskName = disk.get('name'),
-                    diskOffline = disk.get('offline'),
-                    diskSize = humanize.filesize(disk.get('size') * 1024),
-                    diskModel = disk.get('model'),
-                    diskTransport = disk.get('transport'),
-                    diskVendor = disk.get('vendor'),
-                    smartAvailable = disk.get('smart_available'),
-                    poolName = disk.get('pool_name'),
-                    serial = disk.get('serial'),
-                    btrfsUId = disk.get('btrfs_uuid'),
-                    diskParted = disk.get('parted'),
-                    smartEnabled = disk.get('smart_enabled'),
-                    diskRole = disk.get('role'),
-                    smartOptions = disk.get('smart_options');
-
-                html += '<tr>';
-                html += '<td><a href="#disks/' + diskName + ' "><i class="glyphicon glyphicon-hdd"></i> ' + diskName + '</a>&nbsp';
-                if (diskOffline) {
-                    html += '<a href="#" class="delete" data-disk-name="' + diskName + '" title="Disk is unusable because it is offline.Click to delete it from the system" rel="tooltip"><i class="glyphicon glyphicon-trash"></i></a>';
-                } else if (diskRole == 'isw_raid_member' || diskRole == 'linux_raid_member') {
-                    html += '<a href="#" class="raid_member" data-disk-name="' + diskName + '" title="Disk is a mdraid member." rel="tooltip">';
-                    html += '<i class="glyphicon glyphicon-info-sign"></i></a>';
-                } else if (diskParted) {
-                    html += '<a href="#" class="wipe" data-disk-name="' + diskName + '" title="Disk is unusable because it has some other filesystem on it.';
-                    html += 'Click to wipe it clean." rel="tooltip"><i class="glyphicon glyphicon-cog"></i></a>';
-                } else if (btrfsUId && _.isNull(poolName)) {
-                    html += '<a href="#" class="btrfs_wipe" data-disk-name="' + diskName + '" title="Disk is unusable because it has BTRFS filesystem(s) on it.Click to wipe it clean." rel="tooltip">';
-                    html += '<i class="fa fa-eraser"></i></a>&nbsp;<a href="#" class="btrfs_import" data-disk-name="' + diskName + '" title="Click to import data(pools, shares and snapshots) on this disk automatically" rel="tooltip">';
-                    html += '<i class="glyphicon glyphicon-circle-arrow-down"></i></a>';
-                }
-
-                html += '</td>';
-                html += '<td>';
-                if (serial == null || serial == '' || serial == diskName || serial.length == 48) {
-                    html += '<div class="alert alert-danger">' +
-                        '<h4>Warning! Disk serial number is not legitimate or unique.</h4>' + warning + '</div>';
+        // Helper to display APM value after merger with upstream changes
+        // where the above helper is replaced by many smaller ones like this.
+        // N.B. untested. Presumably we do {{humanReadableAPM this.apm_level}}
+        // in upstream disks_table.jst
+        Handlebars.registerHelper('humanReadableAPM', function (apm) {
+            var apmhtml = '';
+            if (apm == 0 || apm == null) {
+                apmhtml = '???';
+            } else {
+                if (apm == 255) {
+                    apmhtml = 'off';
                 } else {
-                    html += serial;
-                    if (serial) {
-                        html += '&nbsp;&nbsp;&nbsp;&nbsp;<a href="#disks/blink/' + diskName + '" title="A tool to physically identify the hard drive with this serial number" rel="tooltip"><i class="fa fa-lightbulb-o fa-lg"></i></a>&nbsp';
-                    }
+                    apmhtml = apm;
                 }
-                html += '</td>';
-                html += '<td>' + diskSize + '</td>';
-                html += '<td>';
-                if (!_.isNull(poolName)) {
-                    html += '<a href="#pools/' + poolName + '">' + poolName + '</a>';
-                }
-                html += '</td>';
-                html += '<td>' + diskModel + '</td>';
-                html += '<td>' + diskTransport + '</td>';
-                html += '<td>' + diskVendor + '</td>';
-                // begin smart table data cell contents
-                html += '<td>';
-                if (smartOptions != null) {
-                    html += smartOptions + ' ';
-                } else {
-                    html += ' ';
-                }
-                html += '<a href="#disks/smartcustom/' + diskName + '" title="Click to add/edit Custom SMART options. Rescan to Apply." rel="tooltip">';
-                html += '<i class="glyphicon glyphicon-pencil"></i></a> ';
-                if (!smartAvailable) {
-                    html += 'Not Supported</td>';
-                } else {
-                    if (smartEnabled) {
-                        html += '<input type="checkbox" data-disk-name="' + diskName + '" data-size="mini" checked></input>';
-                    } else {
-                        html += '<input type="checkbox" data-disk-name="' + diskName + '" data-size="mini"></input>';
-                    }
-                    html += '</td>';
-                }
-                html += '</tr>';
-            });
-            return new Handlebars.SafeString(html);
+            }
+            return new Handlebars.SafeString(apmhtml);
+        });
+        // Simple helper to return true / false on powerState = null or unknown
+        // Untested. Presumably we do:
+        // {{#if (powerstateNullorUnknown this.power_state)}}
+        // in upstream disks_table.jst
+        Handlebars.registerHelper('powerStateNullorUnknown', function (pstate) {
+            if (pstate == 'unknown' || pstate == null ) {
+                return true;
+            }
+            return false;
+        });
+        // Simple helper to return true / false on powerState = active/idle
+        // Untested. Presumably we do:
+        // {{#if (powerStateActiveIdle this.power_state)}}
+        // in upstream disks_table.jst
+        Handlebars.registerHelper('powerStateActiveIdle', function (pstate) {
+            if (pstate == 'active/idle') {
+                return true;
+            }
+            return false;
+        });
+        Handlebars.registerHelper('displayInfo', function (role) {
+            // check for the legacy / pre json formatted role field contents.
+            if (role == 'isw_raid_member' || role == 'linux_raid_member') {
+                return true;
+            }
+            // now check if our role is null = db default
+            if (role == null) {
+                return false;
+            }
+            // try json conversion and return false if it fails
+            // @todo not sure if this is redundant?
+            try {
+                var roleAsJson = JSON.parse(role);
+            } catch (e) {
+                return false;
+            }
+            // We have a json string ie non legacy role info so we can examine:
+            if (roleAsJson.hasOwnProperty('mdraid')) {
+                // in the case of an mdraid property we are assured it is an
+                // mdraid member, the specific type is not important here.
+                // Non mdraid members will have no mdraid property.
+                return true;
+            }
+            // In all other cases return false.
+            return false;
+        });
+
+        Handlebars.registerHelper('displayBtrfs', function (btrfsUid, poolName) {
+            if (btrfsUid && _.isNull(poolName)) {
+                return true;
+            }
+            return false;
+        });
+
+        Handlebars.registerHelper('checkSerialStatus', function (serial, diskName, opts) {
+            // We need to warn the user if any of the following exist as they
+            // are all unreliable. The fake-serial- is generated by scan_disks
+            // and should have overwritten any null, empty or diskName serial.
+            // @todo should be possible to remove null, '' and diskName soon.
+            if (serial == null || serial == '' || serial == diskName ||
+                serial.substring(0, 12) == 'fake-serial-' ||
+                serial == '000000000000') {
+                return opts.fn(this);
+            }
+            return opts.inverse(this);
+        });
+
+        Handlebars.registerHelper('humanReadableSize', function (size) {
+            return humanize.filesize(size * 1024);
         });
     },
 
@@ -285,6 +331,3 @@ DisksView = Backbone.View.extend({
         });
     }
 });
-
-// Add pagination
-Cocktail.mixin(DisksView, PaginationMixin);

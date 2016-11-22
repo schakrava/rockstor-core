@@ -173,7 +173,6 @@ ShareDetailsLayoutView = RockstorLayoutView.extend({
 				//_this.$('#snapshots').empty().append(_this.snapshotsTableView.render().el);
 			}).fail(function() {
 				enableButton(button);
-				showError('error while creating snapshot');
 			});
 		});
 	},
@@ -186,7 +185,7 @@ ShareDetailsLayoutView = RockstorLayoutView.extend({
 		_this.$('#delete-share-modal').modal();
 		return false;
 	},
-	
+
 	confirmShareDelete: function(event) {
 		var _this = this;
 		var button = $(event.currentTarget);
@@ -215,7 +214,7 @@ ShareDetailsLayoutView = RockstorLayoutView.extend({
 		if (event) event.preventDefault();
 		app_router.navigate('shares', {trigger: true})
 	},
-	
+
 	renderAcl: function() {
 		this.$("#ph-access-control").html(this.shareAclTemplate({
 			share: this.share,
@@ -229,10 +228,10 @@ ShareDetailsLayoutView = RockstorLayoutView.extend({
 	editAcl: function(event) {
 		event.preventDefault();
 		this.$("#ph-access-control").html(this.shareAclEditTemplate({
-			share: this.share,
+			share: this.share.toJSON(),
 			permStr: this.parsePermStr(this.share.get("perms")),
-			users: this.users,
-			groups: this.groups,
+			users: this.users.toJSON(),
+			groups: this.groups.toJSON(),
 			sharePerms: this.share.get("perms"),
 		}));
 	},
@@ -375,9 +374,9 @@ ShareDetailsLayoutView = RockstorLayoutView.extend({
 			_this = this;
 			_.each(_.keys(_this.cOpts), function(c) {
 				if (_this.share.get('compression_algo') == c) {
-					html += '<option value=' + c + 'selected="selected">' + _this.cOpts[c] + '</option>';
+					html += '<option value="' + c + '" selected="selected">' + _this.cOpts[c] + '</option>';
 				} else {
-					html += '<option value=' + c + '>' + _this.cOpts[c] + '</option>';
+					html += '<option value="' + c + '">' + _this.cOpts[c] + '</option>';
 				}
 			});
 			return new Handlebars.SafeString(html);
@@ -386,23 +385,23 @@ ShareDetailsLayoutView = RockstorLayoutView.extend({
 		Handlebars.registerHelper('view_read_permissions', function(){
 			var html = '';
 			html += '<td>';
-			if (this.permStr[0] == "1") { 
+			if (this.permStr[0] == "1") {
 				html += '<input type="checkbox" checked="true" disabled>';
-			} else { 
-				html += '<input type="checkbox" disabled>'; 
-			} 
-			html += '</td>';
-			html += '<td>';
-			if (this.permStr[3] == "1") { 
-				html += '<input type="checkbox" checked="true" disabled>';
-			} else { 
+			} else {
 				html += '<input type="checkbox" disabled>';
-			} 
+			}
 			html += '</td>';
 			html += '<td>';
-			if (this.permStr[6] == "1") { 
+			if (this.permStr[3] == "1") {
 				html += '<input type="checkbox" checked="true" disabled>';
-			} else { 
+			} else {
+				html += '<input type="checkbox" disabled>';
+			}
+			html += '</td>';
+			html += '<td>';
+			if (this.permStr[6] == "1") {
+				html += '<input type="checkbox" checked="true" disabled>';
+			} else {
 				html += '<input type="checkbox" disabled>';
 			}
 			html += '</td>';
@@ -412,23 +411,23 @@ ShareDetailsLayoutView = RockstorLayoutView.extend({
 		Handlebars.registerHelper('view_write_permissions', function(){
 			var html = '';
 			html += '<td>';
-			if (this.permStr[1] == "1") { 
+			if (this.permStr[1] == "1") {
 				html += '<input type="checkbox" checked="true" disabled>';
-			} else { 
-				html += '<input type="checkbox" disabled>'; 
-			} 
-			html += '</td>';
-			html += '<td>';
-			if (this.permStr[4] == "1") { 
-				html += '<input type="checkbox" checked="true" disabled>';
-			} else { 
+			} else {
 				html += '<input type="checkbox" disabled>';
-			} 
+			}
 			html += '</td>';
 			html += '<td>';
-			if (this.permStr[7] == "1") { 
+			if (this.permStr[4] == "1") {
 				html += '<input type="checkbox" checked="true" disabled>';
-			} else { 
+			} else {
+				html += '<input type="checkbox" disabled>';
+			}
+			html += '</td>';
+			html += '<td>';
+			if (this.permStr[7] == "1") {
+				html += '<input type="checkbox" checked="true" disabled>';
+			} else {
 				html += '<input type="checkbox" disabled>';
 			}
 			html += '</td>';
@@ -438,76 +437,62 @@ ShareDetailsLayoutView = RockstorLayoutView.extend({
 		Handlebars.registerHelper('view_execute_permissions', function(){
 			var html = '';
 			html += '<td>';
-			if (this.permStr[2] == "1") { 
+			if (this.permStr[2] == "1") {
 				html += '<input type="checkbox" checked="true" disabled>';
-			} else { 
-				html += '<input type="checkbox" disabled>'; 
-			} 
-			html += '</td>';
-			html += '<td>';
-			if (this.permStr[5] == "1") { 
-				html += '<input type="checkbox" checked="true" disabled>';
-			} else { 
+			} else {
 				html += '<input type="checkbox" disabled>';
-			} 
+			}
 			html += '</td>';
 			html += '<td>';
-			if (this.permStr[8] == "1") { 
+			if (this.permStr[5] == "1") {
 				html += '<input type="checkbox" checked="true" disabled>';
-			} else { 
+			} else {
+				html += '<input type="checkbox" disabled>';
+			}
+			html += '</td>';
+			html += '<td>';
+			if (this.permStr[8] == "1") {
+				html += '<input type="checkbox" checked="true" disabled>';
+			} else {
 				html += '<input type="checkbox" disabled>';
 			}
 			html += '</td>';
 			return new Handlebars.SafeString(html);
 		});
 
-		Handlebars.registerHelper('display_owner_options', function(){
-			var html = '',
-			_this = this;
-			this.users.each(function(user) { 
-				if(user.get('username') == _this.share.get('owner')){ 
-					html += '<option value="' + user.get('username') + '" selected="selected" >' + user.get('username') + '</option>';
-				}else{ 
-					html += '<option value="' + user.get('username') + '" >' + user.get('username') + '</option>';
-				} 
-			});
-			return new Handlebars.SafeString(html);
+
+		Handlebars.registerHelper('showOwnerOption', function(userName, shareOwner){
+			if(userName == shareOwner){
+				return 'selected = "selected"';
+			}
 		});
 
-		Handlebars.registerHelper('display_group_options', function(){
-			var html = '',
-			_this = this;
-			this.groups.each(function(group) { 
-				if(group.get('groupname') == _this.share.get('group')){
-				html += '<option value="' + group.get('groupname') + '" selected="selected" >' + group.get('groupname') + '</option>';
-				}else{
-				html += '<option value="' + group.get('groupname') + '">' + group.get('groupname') + '</option>';
-				} 
-				});
-				return new Handlebars.SafeString(html);
+		Handlebars.registerHelper('showGroupOption', function(groupName, shareGroup){
+			if(groupName == shareGroup){
+				return 'selected = "selected"';
+			}
 		});
-
 
 		Handlebars.registerHelper('edit_read_permissions', function(){
 			var html = '';
 			html += '<td>';
-			if (this.permStr[0] == "1") { 
+			if (this.permStr[0] == "1") {
 				html += '<input type="checkbox" name="perms[]" value="owner-r" checked="true">';
-			} else { 
+			} else {
 				html += '<input type="checkbox" name="perms[]" value="owner-r">';
-			} 
+			}
 			html += '</td>';
 			html += '<td>';
-			if (this.permStr[3] == "1") { 
+			if (this.permStr[3] == "1") {
 				html += '<input type="checkbox" name="perms[]" value="group-r" checked="true">';
-			} else { 
+			} else {
 				html += '<input type="checkbox" name="perms[]" value="group-r">';
-			} 
+			}
 			html += '</td>';
 			html += '<td>';
-			if (this.permStr[6] == "1") { 
+			if (this.permStr[6] == "1") {
 				html += '<input type="checkbox" name="perms[]" value="other-r" checked="true">';
-			} else {  
+			} else {
 				html += '<input type="checkbox" name="perms[]" value="other-r">';
 			}
 			html += '</td>';
@@ -517,23 +502,23 @@ ShareDetailsLayoutView = RockstorLayoutView.extend({
 		Handlebars.registerHelper('edit_write_permissions', function(){
 			var html = '';
 			html += '<td>';
-			if (this.permStr[1] == "1") { 
+			if (this.permStr[1] == "1") {
 				html += '<input type="checkbox" name="perms[]" value="owner-w" checked="true">';
-			} else { 
+			} else {
 				html += '<input type="checkbox" name="perms[]" value="owner-w">';
-			} 
+			}
 			html += '</td>';
 			html += '<td>';
-			if (this.permStr[4] == "1") { 
+			if (this.permStr[4] == "1") {
 				html += '<input type="checkbox" name="perms[]" value="group-w" checked="true">';
-			} else { 
+			} else {
 				html += '<input type="checkbox" name="perms[]" value="group-w">';
-			} 
+			}
 			html += '</td>';
 			html += '<td>';
-			if (this.permStr[7] == "1") { 
+			if (this.permStr[7] == "1") {
 				html += '<input type="checkbox" name="perms[]" value="other-w" checked="true">';
-			} else {  
+			} else {
 				html += '<input type="checkbox" name="perms[]" value="other-w">';
 			}
 			html += '</td>';
@@ -543,23 +528,23 @@ ShareDetailsLayoutView = RockstorLayoutView.extend({
 		Handlebars.registerHelper('edit_execute_permissions', function(){
 			var html = '';
 			html += '<td>';
-			if (this.permStr[2] == "1") { 
+			if (this.permStr[2] == "1") {
 				html += '<input type="checkbox" name="perms[]" value="owner-x" checked="true">';
-			} else { 
+			} else {
 				html += '<input type="checkbox" name="perms[]" value="owner-x">';
-			} 
+			}
 			html += '</td>';
 			html += '<td>';
-			if (this.permStr[5] == "1") { 
+			if (this.permStr[5] == "1") {
 				html += '<input type="checkbox" name="perms[]" value="group-x" checked="true">';
-			} else { 
+			} else {
 				html += '<input type="checkbox" name="perms[]" value="group-x">';
-			} 
+			}
 			html += '</td>';
 			html += '<td>';
-			if (this.permStr[8] == "1") { 
+			if (this.permStr[8] == "1") {
 				html += '<input type="checkbox" name="perms[]" value="other-x" checked="true">';
-			} else {  
+			} else {
 				html += '<input type="checkbox" name="perms[]" value="other-x">';
 			}
 			html += '</td>';

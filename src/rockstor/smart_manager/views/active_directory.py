@@ -156,10 +156,7 @@ class ActiveDirectoryServiceView(BaseServiceDetailView):
                 #1. Name resolution check
                 self._resolve_check(config.get('domain'), request)
 
-                #2. ntp check
-                self._ntp_check(request)
-
-                #3. realm discover check?
+                #2. realm discover check?
                 #@todo: phase our realm and just use net?
                 domain = config.get('domain')
                 try:
@@ -197,6 +194,8 @@ class ActiveDirectoryServiceView(BaseServiceDetailView):
 
             elif (command == 'start'):
                 config = self._config(service, request)
+                smbo = Service.objects.get(name='smb')
+                smb_config = self._get_config(smbo)
                 domain = config.get('domain')
                 #1. make sure ntpd is running, or else, don't start.
                 self._ntp_check(request)
@@ -219,14 +218,12 @@ class ActiveDirectoryServiceView(BaseServiceDetailView):
                     #general
                     cmd += ['--update', '--enablelocauthorize',]
                     run_command(cmd)
-                workgroup = self._domain_workgroup(domain, method=method)
-                update_global_config(workgroup, domain, config.get('idmap_range'))
+                config['workgroup'] = self._domain_workgroup(domain, method=method)
+                self._save_config(service, config)
+                update_global_config(smb_config, config)
                 self._join_domain(config, method=method)
                 if (method == 'sssd' and config.get('enumerate') is True):
                     self._update_sssd(domain)
-                so = Service.objects.get(name='smb')
-                so.config = json.dumps({'workgroup': workgroup})
-                so.save()
 
                 if (method == 'winbind'):
                     systemctl('winbind', 'enable')
@@ -238,7 +235,9 @@ class ActiveDirectoryServiceView(BaseServiceDetailView):
                 config = self._config(service, request)
                 try:
                     self._leave_domain(config, method=method)
-                    update_global_config()
+                    smbo = Service.objects.get(name='smb')
+                    smb_config = self._get_config(smbo)
+                    update_global_config(smb_config)
                     systemctl('smb', 'restart')
                     systemctl('nmb', 'restart')
                 except Exception, e:

@@ -20,7 +20,7 @@ from rest_framework import serializers
 from storageadmin.models import (Disk, Pool, Share, Snapshot, NFSExport,
                                  SambaShare, IscsiTarget, Appliance,
                                  SupportCase, DashboardConfig,
-                                 NetworkInterface, User, PoolScrub, Setup,
+                                 NetworkDevice, NetworkConnection, User, PoolScrub, Setup,
                                  NFSExportGroup, SFTP, AdvancedNFSExport,
                                  OauthApp, NetatalkShare, Group, PoolBalance,
                                  SambaCustomConfig, TLSCertificate, RockOn,
@@ -35,7 +35,10 @@ from django.contrib.auth.models import User as DjangoUser
 
 class DiskInfoSerializer(serializers.ModelSerializer):
     pool_name = serializers.CharField()
-
+    power_state = serializers.CharField()
+    hdparm_setting = serializers.CharField()
+    apm_level = serializers.CharField()
+    temp_name = serializers.CharField()
     class Meta:
         model = Disk
 
@@ -74,8 +77,16 @@ class AdvancedNFSExportSerializer(serializers.ModelSerializer):
 
 
 class SUserSerializer(serializers.ModelSerializer):
+    
+    ALLOWED_CHOICES = (
+        ('yes', 'yes'),
+        ('no', 'no'),
+        ('otp', 'otp')
+        )
     groupname = serializers.CharField()
     managed_user = serializers.BooleanField(default=True)
+    has_pincard = serializers.BooleanField(default=False)
+    pincard_allowed = serializers.ChoiceField(choices=ALLOWED_CHOICES, default='no')
 
     class Meta:
         model = User
@@ -114,6 +125,13 @@ class IscsiSerializer(serializers.ModelSerializer):
         model = IscsiTarget
 
 
+class SharePoolSerializer(serializers.ModelSerializer):
+    size_gb = serializers.FloatField()
+
+    class Meta:
+        model = Share
+
+
 class ShareSerializer(serializers.ModelSerializer):
     snapshots = SnapshotSerializer(many=True, source='snapshot_set')
     pool = PoolInfoSerializer()
@@ -140,9 +158,20 @@ class DashboardConfigSerializer(serializers.ModelSerializer):
         model = DashboardConfig
 
 
-class NetworkInterfaceSerializer(serializers.ModelSerializer):
+class NetworkDeviceSerializer(serializers.ModelSerializer):
+    cname = serializers.CharField()
+
     class Meta:
-        model = NetworkInterface
+        model = NetworkDevice
+
+
+class NetworkConnectionSerializer(serializers.ModelSerializer):
+    ctype = serializers.CharField()
+    team_profile = serializers.CharField()
+    bond_profile = serializers.CharField()
+
+    class Meta:
+        model = NetworkConnection
 
 
 class PoolScrubSerializer(serializers.ModelSerializer):

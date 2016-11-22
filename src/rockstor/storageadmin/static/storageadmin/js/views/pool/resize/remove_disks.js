@@ -25,57 +25,68 @@
  */
 
 PoolRemoveDisks = RockstorWizardPage.extend({
-
-    initialize: function() {
-	this.disks = new DiskCollection();
-	this.disks.setPageSize(100);
-	this.template = window.JST.pool_resize_remove_disks;
-	this.disks_template = window.JST.common_disks_table;
-	RockstorWizardPage.prototype.initialize.apply(this, arguments);
-	this.disks.on('reset', this.renderDisks, this);
-	this.initHandlebarHelpers();
+    events: {
+        "click #checkAll": "selectAllCheckboxes",
+        'click [class="diskname"]': 'clickCheckbox',
     },
 
-    render: function() {
-	RockstorWizardPage.prototype.render.apply(this, arguments);
-	this.disks.fetch();
-	return this;
+    initialize: function () {
+        this.disks = new DiskCollection();
+        this.disks.setPageSize(100);
+        this.template = window.JST.pool_resize_remove_disks;
+        this.disks_template = window.JST.common_disks_table;
+        RockstorWizardPage.prototype.initialize.apply(this, arguments);
+        this.disks.on('reset', this.renderDisks, this);
+        this.initHandlebarHelpers();
     },
 
-    renderDisks: function() {
-	var disks = this.disks.filter(function(disk) {
-	    return disk.get('pool_name') == this.model.get('pool').get('name');
-	}, this);
-	this.$('#ph-disks-table').html(this.disks_template({disks: disks}));
+    render: function () {
+        RockstorWizardPage.prototype.render.apply(this, arguments);
+        this.disks.fetch();
+        return this;
     },
 
-    save: function() {
-	var _this = this;
-	var checked = this.$(".diskname:checked").length;
-	var diskNames = [];
-	this.$(".diskname:checked").each(function(i) {
-	    diskNames.push($(this).val());
-	});
-	this.model.set('diskNames', diskNames);
-	return $.Deferred().resolve();
+    renderDisks: function () {
+        var disks = this.disks.filter(function (disk) {
+            return disk.get('pool_name') == this.model.get('pool').get('name');
+        }, this);
+        //convert the array elements which are backbone models/collections to JSON object
+        for (var i = 0; i < disks.length; i++) {
+            disks[i] = disks[i].toJSON();
+        }
+        this.$('#ph-disks-table').html(this.disks_template({disks: disks}));
     },
-    
-    initHandlebarHelpers: function(){
-    Handlebars.registerHelper('display_disksToAdd', function(){
-		var html = '';
-		_.each(this.disks, function(disk, index) {
-			var diskName = disk.get('name');
-			html += '<tr>';
-			html += '<td>' + (index+1) + '</td>';
-			html += '<td>' + diskName + '</td>';
-			html += '<td>' + humanize.filesize(disk.get('size')*1024) + '</td>';
-			html += '<td>' + disk.get('parted') + '</td>';
-			html += '<td><input type="checkbox" name="diskname" id="' + diskName + '" value="' + diskName + '" class="diskname"></td>';
-			html += '</tr>';
-		});
-		return new Handlebars.SafeString(html);
-	});
 
-}
+    selectAllCheckboxes: function (event) {
+        $("#checkAll").change(function () {
+            $("input:checkbox").prop('checked', $(this).prop("checked"));
+            $("input:checkbox").closest("tr").toggleClass("row-highlight", this.checked);
+        });
+    },
 
+    clickCheckbox: function (event) {
+        $("input:checkbox").change(function () {
+            $(this).closest("tr").toggleClass("row-highlight", this.checked);
+        });
+    },
+
+    save: function () {
+        var _this = this;
+        var checked = this.$(".diskname:checked").length;
+        var diskNames = [];
+        this.$(".diskname:checked").each(function (i) {
+            diskNames.push($(this).val());
+        });
+        this.model.set('diskNames', diskNames);
+        return $.Deferred().resolve();
+    },
+
+    initHandlebarHelpers: function () {
+        Handlebars.registerHelper('mathHelper', function (value, options) {
+            return parseInt(value) + 1;
+        });
+        Handlebars.registerHelper('humanReadableSize', function(diskSize){
+            return humanize.filesize(diskSize * 1024);
+        });
+    }
 });

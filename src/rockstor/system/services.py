@@ -33,6 +33,7 @@ SYSTEMCTL_BIN = '/usr/bin/systemctl'
 SUPERCTL_BIN = ('%s/bin/supervisorctl' % settings.ROOT_DIR)
 SUPERVISORD_CONF = ('%s/etc/supervisord.conf' % settings.ROOT_DIR)
 NET = '/usr/bin/net'
+WBINFO = '/usr/bin/wbinfo'
 AFP_CONFIG = '/etc/netatalk/afp.conf'
 
 
@@ -47,8 +48,8 @@ def init_service_op(service_name, command, throw=True):
     :return: out err rc
     """
     supported_services = ('nfs', 'smb', 'sshd', 'ypbind', 'rpcbind', 'ntpd',
-                          'nslcd', 'netatalk', 'snmpd', 'docker',
-                          'smartd', 'nut-server', 'rockstor-bootstrap',)
+                          'nslcd', 'netatalk', 'snmpd', 'docker', 'smartd',
+                          'shellinaboxd', 'nut-server', 'rockstor-bootstrap', 'rockstor')
     if (service_name not in supported_services):
         raise Exception('unknown service: %s' % service_name)
 
@@ -159,9 +160,18 @@ def service_status(service_name, config=None):
                            throw=False)
     elif (service_name == 'active-directory'):
         if (config is not None):
-            cmd = [NET, 'ads', 'status', '-U', config.get('username')]
-            return run_command(cmd, input=('%s\n' % config.get('password')),
-                               throw=False)
+            # 2 steps Active Directory status check
+            # First checks secret via rpc callable
+            # Second checks via auth for admin username
+            # If both give us 0 rc Active Directory is running
+            wbinfo_trust_cmd = [WBINFO, '-t', '--domain', config.get('domain')]
+            wbinfo_auth_credentials = '{}@{}%{}'.format(config.get('username'), config.get('domain'), config.get('password'))
+            wbinfo_auth_cmd = [WBINFO, '-a', wbinfo_auth_credentials, '--domain', config.get('domain')]
+            wbinfo_trust = run_command(wbinfo_trust_cmd, throw=False)
+            wbinfo_auth = run_command(wbinfo_auth_cmd, throw=False)
+            active_directory_rc = 0 if (wbinfo_trust[2] == 0 and wbinfo_auth[2] == 0) else 1
+            
+            return '', '', active_directory_rc
         # bootstrap switch subsystem interprets -1 as ON so returning 1 instead
         return '', '', 1
 
@@ -206,15 +216,43 @@ def refresh_afp_config(afpl):
     fo, npath = mkstemp()
     with open(AFP_CONFIG) as afo, open(npath, 'w') as tfo:
         rockstor_section = False
+        tfo.write('; Netatalk 3.x configuration file\n\n')
+        tfo.write('[Global]\n')
+        tfo.write('mimic model = RackMac\n\n')
         for line in afo.readlines():
             if (re.match(';####BEGIN: Rockstor AFP CONFIG####', line)
                     is not None):
                 rockstor_section = True
                 rockstor_afp_config(tfo, afpl)
                 break
-            else:
-                tfo.write(line)
         if (rockstor_section is False):
             rockstor_afp_config(tfo, afpl)
     shutil.move(npath, AFP_CONFIG)
     os.chmod(AFP_CONFIG, 0644)
+
+
+def update_nginx(ip, port):
+    port = int(port)
+    conf = '%s/etc/nginx/nginx.conf' % settings.ROOT_DIR
+    fo, npath = mkstemp()
+    with open(conf) as ifo, open(npath, 'w') as tfo:
+        http_server = False
+        lines = ifo.readlines()
+        for i in range(len(lines)):
+            if (re.search('server {', lines[i]) is not None and
+                re.search('listen.*80 default_server', lines[i+1]) is not None):
+                #found legacy http server section. don't rewrite it.
+                http_server = True
+            if (not http_server and
+                re.search('listen.*default_server', lines[i]) is not None):
+                substr = 'listen %d default_server' % port
+                if (ip is not None):
+                    substr = 'listen %s:%d default_server' % (ip, port)
+                lines[i] = re.sub(r'listen.* default_server', substr, lines[i])
+            if (not http_server):
+                tfo.write(lines[i])
+            if (http_server is True and lines[i].strip() == '}'):
+                http_server = False
+
+    move(npath, conf)
+    superctl('nginx', 'restart')

@@ -244,7 +244,7 @@ select, textarea, input[type="text"], input[type="password"], input[type="dateti
     margin-top: 0;
     border-top: 0;
     border-radius: 2px;
-    left: 0;
+    left: auto;
 }
 
 @media (max-width: 1150px) {
@@ -767,6 +767,15 @@ label.error { font-size: 12px; color: #b94a48; }
 /* Error content */
 #errorContent { padding: 20px; }
 
+.tracebackDiv{
+	overflow:scroll; 
+	height:250px;"
+}
+
+.reportError{
+	font-size:14px;
+} 
+
 /* Modal */
 .modal {
   /*position: absolute;*/
@@ -787,10 +796,25 @@ label.error { font-size: 12px; color: #b94a48; }
 
 #breadcrumbs h3 { color: #005580; padding: 0; margin: 0;}
 
-#appliance-name {
+#appliance-name, #local-time , #direct-shell {
     color: #FFFFFF;
     font-family: Roboto-Light;
     font-size: 12px;
+}
+
+#local-time, #direct-shell {
+    padding-left: 20px;
+    display: inline-block;
+}
+
+#rockstor-shell {
+	position: absolute;
+	left: 0px;
+	right: 0px;
+	bottom: 0px;
+	top: 0px;
+	width: 100%;
+	height: 100%
 }
 
 #appliance-select-content {
@@ -883,11 +907,7 @@ hr.module-sep { margin: 0; border: 0; border-top: 1px solid #ddd;
 }
 
 /*** Messages ***/
-.alert-success {
-  background: none;
-  border: none;
-  padding: 0px;
-}
+
 .alert-small {
   padding: 4px 12px;
 }

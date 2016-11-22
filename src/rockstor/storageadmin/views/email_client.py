@@ -18,6 +18,7 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 import os
 import re
+import json
 from rest_framework.response import Response
 from django.db import transaction
 from storageadmin.models import (EmailClient, Appliance)
@@ -29,7 +30,7 @@ from shutil import move
 from tempfile import mkstemp
 from django.conf import settings
 from system.services import systemctl
-from system.email_util import send_test_email
+from system.email_util import send_test_email, test_smtp_auth
 import logging
 logger = logging.getLogger(__name__)
 
@@ -81,11 +82,11 @@ def update_generic(sender, revert=False):
     run_command([POSTMAP, generic_file])
     os.chmod('%s.db' % generic_file, 0600)
 
-def update_sasl(smtp_server, port, sender, password, revert=False):
+def update_sasl(smtp_server, port, username, password, revert=False):
     sasl_file = '/etc/postfix/sasl_passwd'
     with open(sasl_file, 'w') as fo:
         if (not revert):
-            fo.write('[%s]:%d %s:%s\n' % (smtp_server, port, sender, password))
+            fo.write('[%s]:%d %s:%s\n' % (smtp_server, port, username, password))
     os.chmod(sasl_file, 0400)
     run_command([POSTMAP, sasl_file])
     os.chmod('%s.db' % sasl_file, 0600)
@@ -118,34 +119,49 @@ class EmailClientView(rfc.GenericView):
     def post(self, request, command=None):
         with self._handle_exception(request):
 
+            commands_list = ['send-test-email', 'check-smtp-auth']
             if (command is not None):
-                if (command != 'send-test-email'):
+                if (command not in commands_list):
                     e_msg = ('unknown command(%s) is not supported.' %
                              command)
                     handle_exception(Exception(e_msg), request)
+                    
+                if (command == 'send-test-email'):
+                    if (EmailClient.objects.count() == 0):
+                        e_msg = ('E-mail account must be setup first before test '
+                                 'e-mail could be sent')
+                        handle_exception(Exception(e_msg), request)
 
-                if (EmailClient.objects.count() == 0):
-                    e_msg = ('E-mail account must be setup first before test '
-                             'e-mail could be sent')
-                    handle_exception(Exception(e_msg), request)
-
-                eco = EmailClient.objects.all()[0]
-                subject = ('Test message from Rockstor. Appliance id: %s' %
-                           Appliance.objects.get(current_appliance=True).uuid)
-                send_test_email(eco, subject)
-                return Response()
+                    eco = EmailClient.objects.all()[0]
+                    subject = ('Test message from Rockstor. Appliance id: %s' %
+                               Appliance.objects.get(current_appliance=True).uuid)
+                    send_test_email(eco, subject)
+                    return Response()
+                    
+                elif (command == 'check-smtp-auth'):
+                    mail_auth = {}
+                    sender = request.data.get('sender')
+                    username = request.data.get('username')
+                    mail_auth['username'] = sender if not username else username 
+                    mail_auth['password'] = request.data.get('password')
+                    mail_auth['smtp_server'] = request.data.get('smtp_server')
+                    mail_auth['port'] = int(request.data.get('port', 587))
+                    
+                    return Response(json.dumps({'smtp_auth': test_smtp_auth(mail_auth)}), content_type="application/json")
+                    
 
             sender = request.data.get('sender')
-            username = sender.split('@')[0]
+            username = request.data.get('username') #collect new username field
+            username = sender if not username else username #smtp auth - use username or if empty use sender
             smtp_server = request.data.get('smtp_server')
             port = int(request.data.get('port', 587))
             name = request.data.get('name')
             password = request.data.get('password')
             receiver = request.data.get('receiver')
             eco = EmailClient(smtp_server=smtp_server, port=port, name=name,
-                              sender=sender, receiver=receiver)
+                              sender=sender, receiver=receiver, username=username)
             eco.save()
-            update_sasl(smtp_server, port, sender, password)
+            update_sasl(smtp_server, port, username, password)
             update_forward(receiver)
             update_generic(sender)
             update_postfix(smtp_server, port)

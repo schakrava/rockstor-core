@@ -283,7 +283,6 @@ TEMPLATE_CONTEXT_PROCESSORS = (
    "django.core.context_processors.request"
 )
 
-SMB_CONF = '${django-settings-conf:smb_conf}'
 MNT_PT = '/mnt2/'
 NFS_EXPORT_ROOT = '/export/'
 SFTP_MNT_ROOT = '/mnt3/'
@@ -389,6 +388,13 @@ NUT_LISTEN_ON_IP = '0.0.0.0'
 # The command that the root part of upsmon uses to shutdown the system.
 NUT_SYSTEM_SHUTDOWNCMD = '/sbin/shutdown -h +0'
 
+# Shell In A Box base settings
+SHELLINABOX = {
+	'user': 'root',
+	'group': 'root',
+	'port': '4200',
+	'certs': '/var/lib/shellinabox'
+}
 
 UPDATE_CHANNELS = {
 		'stable': {
@@ -399,7 +405,7 @@ UPDATE_CHANNELS = {
 		'testing': {
 		'name': 'Testing',
 		'description': 'Subscription channel for testing updates',
-		'url': 'rockstor.com/rockrepo-testing',
+                'url': 'updates.rockstor.com:8999/rockstor-testing',
 		},
 }
 
