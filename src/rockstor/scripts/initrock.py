@@ -27,7 +27,6 @@ import time
 import json
 from tempfile import mkstemp
 from django.conf import settings
-from system.pkg_mgmt import downgrade_pkgs
 
 
 logger = logging.getLogger(__name__)
